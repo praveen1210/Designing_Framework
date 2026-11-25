@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Design Framework – PROP TYPE SST</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --ink:#1d2330; --muted:#677084; --line:#dde1e8; --accent:#1f5fbf; --err:#c62828; --head:52px; --aside:340px; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; }
+  body { margin:0; font:14px/1.4 "Segoe UI", Roboto, Arial, sans-serif; color:var(--ink); background:var(--bg); overflow:hidden; }
+
+  /* ---------- header ---------- */
+  header { height:var(--head); display:flex; align-items:center; gap:10px; padding:0 14px; background:#1d2330; color:#fff; }
+  header h1 { font-size:15px; margin:0 6px 0 0; font-weight:600; white-space:nowrap; }
+  header .sp { flex:1; }
+  button { font:inherit; border:1px solid #3c4659; background:#2b3446; color:#fff; padding:6px 11px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  button:hover { background:#3a4560; }
+  button.primary { background:var(--accent); border-color:var(--accent); }
+  .tabs { display:flex; background:#11161f; border-radius:8px; padding:3px; gap:3px; }
+  .tabs button { border:0; background:transparent; color:#aab3c5; padding:5px 14px; }
+  .tabs button.on { background:#fff; color:#1d2330; font-weight:600; }
+
+  /* ---------- layout: inputs fixed, content scrolls ---------- */
+  aside { position:fixed; top:var(--head); left:0; bottom:0; width:var(--aside); background:var(--panel); border-right:1px solid var(--line); padding:12px 14px 20px; overflow-y:auto; z-index:5; }
+  #content { position:fixed; top:var(--head); left:var(--aside); right:0; bottom:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; }
+
+  fieldset { border:0; border-top:1px solid var(--line); margin:10px 0 0; padding:10px 0 0; }
+  fieldset:first-of-type { border-top:0; margin-top:0; padding-top:0; }
+  legend { font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:0; }
+  label { display:grid; grid-template-columns: 1fr 128px; align-items:center; gap:8px; margin:7px 0; font-size:13px; }
+  label small { display:block; color:var(--muted); font-size:11px; }
+  input, textarea { font:inherit; width:100%; padding:5px 7px; border:1px solid #c9ced8; border-radius:5px; background:#fffde0; }
+  textarea { resize:vertical; min-height:44px; }
+  input.bad { border-color:var(--err); background:#ffecec; }
+  .cell { font:11px Consolas, monospace; color:#8a6d00; background:#fff7c2; padding:0 4px; border-radius:3px; }
+  .hint { color:var(--muted); font-size:12px; }
+  .sheetname { font-weight:600; font-size:13px; margin:0 0 6px; }
+
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .card > .bar { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .card > .bar h2 { font-size:14px; margin:0; flex:1; white-space:nowrap; }
+  .card > .body { padding:12px; }
+  .bar button.tool { background:#fff; color:var(--ink); border:1px solid #c9ced8; padding:3px 9px; min-width:30px; }
+  .bar button.tool:hover { background:#eef1f6; }
+  .bar .sep { width:1px; height:22px; background:var(--line); margin:0 2px; }
+  .bar label.chk { display:flex; gap:5px; margin:0; font-size:12px; color:var(--muted); grid-template-columns:none; }
+  .bar label.chk input { width:auto; }
+  #zoomPct { min-width:48px; text-align:center; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #err { color:var(--err); font-weight:600; font-size:13px; }
+
+  /* ---------- diagram viewport ---------- */
+  #diagram .viewport { overflow:auto; background:#e3e6eb; height:calc(100vh - var(--head) - 120px); min-height:320px; cursor:grab; border-radius:0 0 10px 10px; }
+  #diagram .viewport.panning { cursor:grabbing; user-select:none; }
+  #diagram .stage { padding:12px; width:max-content; min-width:100%; }
+  #sheet { display:block; background:#fff; box-shadow:0 1px 5px rgba(0,0,0,.2); margin:0 auto; }
+  /* minimized: only the title bar stays */
+  #diagram.min .viewport { display:none; }
+  #diagram.min > .bar { border-bottom:0; }
+  /* maximized: fills the area right of the input panel */
+  #diagram.max { position:fixed; top:var(--head); left:var(--aside); right:0; bottom:0; z-index:20; border-radius:0; display:flex; flex-direction:column; }
+  #diagram.max .viewport { flex:1; height:auto; border-radius:0; }
+  #diagram.max.full { left:0; }
+  body.full aside { display:none; }
+
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { border:1px solid var(--line); padding:5px 8px; text-align:right; }
+  th { background:#e6f0dd; text-align:center; font-weight:600; }
+  td:first-child { text-align:left; font-weight:600; }
+  .grid2 { display:grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap:4px 18px; font-size:13px; }
+  .grid2 div { display:flex; justify-content:space-between; border-bottom:1px dotted var(--line); padding:3px 0; }
+  .grid2 b { font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 900px) {
+    :root { --aside: 0px; }
+    body { overflow:auto; }
+    aside, #content { position:static; width:auto; }
+  }
+  @page { size: A3 landscape; margin: 0; }
+  @media print {
+    body { overflow:visible; background:#fff; }
+    header, aside, .bar, .no-print { display:none !important; }
+    #content, #diagram, #diagram.max { position:static; padding:0; border:0; display:block; overflow:visible; }
+    #diagram .viewport { display:block !important; height:auto; overflow:visible; background:#fff; }
+    #diagram .stage { padding:0; }
+    #sheet { width:420mm !important; height:297mm !important; box-shadow:none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Design Framework</h1>
+  <div class="tabs" id="tabs"></div>
+  <span class="sp"></span>
+  <button id="btnReset" title="Back to the values saved in the Excel for this sheet">Reset</button>
+  <button id="btnSave" title="Save these inputs to a .json file">Save inputs</button>
+  <button id="btnLoad" title="Load inputs from a .json file">Load inputs</button>
+  <input type="file" id="fileLoad" accept=".json" hidden>
+  <button id="btnPng">Export PNG</button>
+  <button id="btnPdf" class="primary" title="Opens print: choose Save as PDF, A3 landscape, margins None">Export PDF</button>
+  <button id="btnLisp" title="Data file for PROP1_AUTO.LSP in AutoCAD">AutoCAD data</button>
+</header>
+
+<aside id="inputs"></aside>
+
+<section id="content">
+  <div class="card" id="diagram">
+    <div class="bar">
+      <h2 id="diagramTitle">Drawing</h2>
+      <span id="err"></span>
+      <label class="chk"><input type="checkbox" id="chkHighlight" checked> Input markers</label>
+      <label class="chk" title="Leave unticked for clean PNG/PDF"><input type="checkbox" id="chkHighlightExport"> in export</label>
+      <span class="sep"></span>
+      <button class="tool" id="zoomOut" title="Zoom out (Ctrl + wheel)">−</button>
+      <span id="zoomPct">Fit</span>
+      <button class="tool" id="zoomIn" title="Zoom in (Ctrl + wheel)">+</button>
+      <button class="tool" id="zoomFit" title="Fit to window">Fit</button>
+      <button class="tool" id="zoom100" title="Actual size (A3 at 200 dpi)">1:1</button>
+      <span class="sep"></span>
+      <button class="tool" id="btnMin" title="Minimize the drawing">▁</button>
+      <button class="tool" id="btnMax" title="Maximize the drawing (Esc to restore)">▢</button>
+      <button class="tool" id="btnFull" title="Full window, hides the input panel (Esc to restore)">⛶</button>
+    </div>
+    <div class="viewport" id="viewport">
+      <div class="stage" id="stage"><svg id="sheet" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    </div>
+  </div>
+
+  <div class="card no-print">
+    <div class="bar"><h2>Body extension table</h2>
+      <button class="tool" id="btnCsv">CSV</button><button class="tool" id="btnCopy">Copy table</button></div>
+    <div class="body"><table id="tbl"></table></div>
+  </div>
+
+  <div class="card no-print">
+    <div class="bar"><h2>Calculation summary</h2></div>
+    <div class="body"><div class="grid2" id="summary"></div></div>
+  </div>
+</section>
+
+<script src="prop_engine.js"></script>
+<script src="sst_body_template.js"></script>
+<script src="sst_leg_template.js"></script>
+<script>
+(function () {
+  "use strict";
+  const E = window.PropEngine;
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const SHEET_KEYS = Object.keys(E.SHEETS);
+  const storeKey = s => "designFramework." + s + ".inputs";
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  };
+
+  // ---------- input definitions (yellow cells, same on both sheets) ----------
+  const INPUT_GROUPS = [
+    ["Stub & levels", [
+      ["top_of_stub_height", "Top of stub height (L1)", "C18", "num"],
+      ["conc_to_gl", "Conc. level to G.L.", "C25", "num"],
+      ["stub_below_gl", "Stub below G.L.", "C40", "num"],
+      ["base_width_conc_lvl", "+0M body extn at conc. level", "F91", "num"],
+    ]],
+    ["Tower slope", [
+      ["slope_vertical", "Slope vertical", "AD32", "num"],
+      ["slope_horizontal", "Slope horizontal", "AE37", "num"],
+    ]],
+    ["Leg / angle", [
+      ["leg_width", "Leg size (width)", "B32", "num"],
+      ["leg_size_text_2", "Leg size text 2", "B31", "text"],
+      ["leg_size_text_3", "Leg size text 3", "B30", "text"],
+      ["angle_size_text", "Angle size", "S37", "text"],
+    ]],
+    ["Hole details", [
+      ["hole_gap", "Hole gap", "T35", "num"],
+      ["plate_dim_1", "Plate dim 1", "W31", "num"],
+      ["plate_dim_2", "Plate dim 2", "W32", "num"],
+      ["hole_text", "Hole text", "Y30", "text"],
+      ["slotted_hole_text", "Slotted hole text", "N33", "area"],
+    ]],
+  ];
+  const ACAD_FIELDS = [["acad_x", "Table insertion X"], ["acad_y", "Table insertion Y"]];
+  const NUM_KEYS = INPUT_GROUPS.flatMap(g => g[1]).filter(f => f[3] === "num").map(f => f[0]).concat(["acad_x", "acad_y"]);
+
+  // ---------- what goes in each cell of the drawing ----------
+  const fmtGeneral = v => (typeof v === "number" ? String(Math.round(v * 1e6) / 1e6) : String(v ?? ""));
+  const fmtFixed = d => v => Number(v).toFixed(d);
+  const CELL_MAP = {
+    C18: ["top_of_stub_height", fmtGeneral, true], C25: ["conc_to_gl", fmtGeneral, true],
+    C40: ["stub_below_gl", fmtGeneral, true], B32: ["leg_width", fmtGeneral, true],
+    B31: ["leg_size_text_2", fmtGeneral, true], B30: ["leg_size_text_3", fmtGeneral, true],
+    Y30: ["hole_text", fmtGeneral, true], N33: ["slotted_hole_text", fmtGeneral, true],
+    W31: ["plate_dim_1", fmtGeneral, true], W32: ["plate_dim_2", fmtGeneral, true],
+    T35: ["hole_gap", fmtGeneral, true], S37: ["angle_size_text", fmtGeneral, true],
+    AD32: ["slope_vertical", fmtGeneral, true], AE37: ["slope_horizontal", fmtGeneral, true],
+    AH34: ["=slope_horizontal_2", fmtGeneral], S35: ["=gauge_half", fmtGeneral], U35: ["=gauge_half", fmtGeneral],
+    AF32: ["=slope_face_length", fmtFixed(4)], AG31: ["=slope_develop_length", fmtFixed(4)],
+  };
+  const TABLE_COLS = { E: "l1", F: "l1_diag", G: "l2", H: "l2_diag", I: "l3", J: "l3_diag" };
+  E.BODY_EXTENSIONS.forEach((_, i) => {
+    for (const [col, key] of Object.entries(TABLE_COLS)) CELL_MAP[col + (74 + i)] = ["#" + i + "." + key, fmtFixed(2)];
+  });
+
+  // ---------- state (one set of inputs per sheet) ----------
+  let sheet = SHEET_KEYS.includes(store.get("designFramework.sheet")) ? store.get("designFramework.sheet") : "SST-BODY";
+  const states = {};
+  function freshState(s) { return Object.assign(E.defaultInputs(s), { acad_x: 0, acad_y: 0 }); }
+  SHEET_KEYS.forEach(s => {
+    states[s] = freshState(s);
+    try { const saved = JSON.parse(store.get(storeKey(s)) || "null"); if (saved) Object.assign(states[s], saved); } catch (e) {}
+  });
+  const state = () => states[sheet];
+  const saveState = () => store.set(storeKey(sheet), JSON.stringify(state()));
+  let lastResult = null;
+
+  // ---------- sheet tabs ----------
+  const tabs = document.getElementById("tabs");
+  tabs.innerHTML = SHEET_KEYS.map(s => `<button data-sheet="${s}">${s}</button>`).join("");
+  tabs.onclick = ev => { const s = ev.target.dataset.sheet; if (s && s !== sheet) switchSheet(s); };
+  function switchSheet(s) {
+    sheet = s; store.set("designFramework.sheet", s);
+    tabs.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.sheet === s));
+    document.getElementById("diagramTitle").textContent = E.SHEETS[s];
+    document.title = "Design Framework – " + E.SHEETS[s];
+    setBackground();
+    buildInputs();
+    update();
+  }
+
+  // ---------- input panel (fixed, scrolls on its own) ----------
+  const aside = document.getElementById("inputs");
+  function buildInputs() {
+    const st = state();
+    let html = `<p class="sheetname">${E.SHEETS[sheet]}</p><p class="hint" style="margin-top:0">Yellow cells of the Excel sheet. The drawing and table update as you type.</p>`;
+    for (const [title, fields] of INPUT_GROUPS) {
+      html += `<fieldset><legend>${title}</legend>`;
+      for (const [key, label, cell, kind] of fields) {
+        const ctl = kind === "area"
+          ? `<textarea data-key="${key}" rows="2"></textarea>`
+          : `<input data-key="${key}" ${kind === "num" ? 'inputmode="decimal"' : ""}>`;
+        html += `<label><span>${label}<small><span class="cell">${cell}</span></small></span>${ctl}</label>`;
+      }
+      html += "</fieldset>";
+    }
+    html += '<fieldset><legend>AutoCAD table position</legend>';
+    for (const [key, label] of ACAD_FIELDS) html += `<label><span>${label}</span><input data-key="${key}" inputmode="decimal"></label>`;
+    html += '<p class="hint">Used by “AutoCAD data” with PROP1_AUTO.LSP.</p></fieldset>';
+    aside.innerHTML = html;
+    aside.querySelectorAll("[data-key]").forEach(el => {
+      el.value = st[el.dataset.key];
+      el.addEventListener("input", onInput);
+    });
+  }
+  function onInput(ev) {
+    const el = ev.target, key = el.dataset.key;
+    if (NUM_KEYS.includes(key)) {
+      const v = el.value.trim();
+      const ok = v !== "" && isFinite(Number(v));
+      el.classList.toggle("bad", !ok);
+      if (!ok) { showErr("Check the red field"); return; }
+      state()[key] = Number(v);
+    } else state()[key] = el.value;
+    saveState();
+    update();
+  }
+  function showErr(msg) { document.getElementById("err").textContent = msg || ""; }
+
+  // ---------- drawing ----------
+  const svg = document.getElementById("sheet");
+  const bg = document.createElementNS(SVGNS, "image");
+  svg.appendChild(bg);
+  const layer = document.createElementNS(SVGNS, "g");
+  svg.appendChild(layer);
+  const tpl = () => window.TEMPLATES[sheet];
+
+  function setBackground() {
+    const T = tpl();
+    svg.setAttribute("viewBox", `0 0 ${T.W} ${T.H}`);
+    bg.setAttribute("href", T.bg); bg.setAttribute("width", T.W); bg.setAttribute("height", T.H);
+    applyZoom();
+  }
+
+  function cellValue(cell, res) {
+    const [src, fmt] = CELL_MAP[cell];
+    let v;
+    if (src.startsWith("=")) v = res[src.slice(1)];
+    else if (src.startsWith("#")) { const [i, k] = src.slice(1).split("."); v = res.rows[+i][k]; }
+    else v = res.inputs[src];
+    return fmt(v);
+  }
+  function fontFamily(f) {
+    if (/black/i.test(f.font)) return '"Arial Black", Arial, sans-serif';
+    if (/narrow/i.test(f.font)) return '"Arial Narrow", Arial, sans-serif';
+    return 'Calibri, Carlito, "Segoe UI", Arial, sans-serif';
+  }
+
+  function drawFields(res, highlight) {
+    layer.textContent = "";
+    for (const [cell, f] of Object.entries(tpl().fields)) {
+      if (!CELL_MAP[cell]) continue;
+      const isInput = !!CELL_MAP[cell][2];
+      const [x0, y0, x1, y1] = f.box, w = x1 - x0, h = y1 - y0, cx = x0 + w / 2, cy = y0 + h / 2;
+      const text = cellValue(cell, res);
+      // Background already has these cells blanked: nothing is painted over drawing lines,
+      // only a see-through marker on input cells when asked.
+      if (highlight && isInput) {
+        const rect = document.createElementNS(SVGNS, "rect");
+        rect.setAttribute("x", x0); rect.setAttribute("y", y0);
+        rect.setAttribute("width", w); rect.setAttribute("height", h);
+        rect.setAttribute("fill", "#ffff00"); rect.setAttribute("fill-opacity", "0.55");
+        layer.appendChild(rect);
+      }
+      const isNumber = /^-?[\d.]+$/.test(text);
+      const align = f.align === "general" ? (isNumber ? "right" : "left") : f.align;
+      const t = document.createElementNS(SVGNS, "text");
+      t.setAttribute("font-family", fontFamily(f));
+      t.setAttribute("font-size", f.size);
+      if (f.bold) t.setAttribute("font-weight", "bold");
+      t.setAttribute("text-anchor", align === "center" ? "middle" : align === "right" ? "end" : "start");
+      t.setAttribute("fill", "#000");
+      const pad = 3, lines = text.split("\n"), lh = f.size * 1.1;
+      const startDy = -((lines.length - 1) * lh) / 2;
+      lines.forEach((line, i) => {
+        const ts = document.createElementNS(SVGNS, "tspan");
+        ts.setAttribute("x", 0);
+        ts.setAttribute("dy", i === 0 ? startDy + f.size * 0.35 : lh);
+        ts.textContent = line;
+        t.appendChild(ts);
+      });
+      if (f.rot === 90) {
+        // Excel 90° = reads bottom-to-top; "right" puts the end at the top of the cell
+        const along = align === "center" ? 0 : align === "right" ? h / 2 - pad : -(h / 2 - pad);
+        t.setAttribute("transform", `translate(${cx} ${cy}) rotate(-90) translate(${along} 0)`);
+      } else {
+        const x = align === "center" ? cx : align === "right" ? x1 - pad : x0 + pad;
+        t.setAttribute("transform", `translate(${x} ${cy})`);
+      }
+      t.dataset.cell = cell;
+      layer.appendChild(t);
+    }
+  }
+
+  // ---------- zoom / pan / maximize / minimize ----------
+  const card = document.getElementById("diagram");
+  const viewport = document.getElementById("viewport");
+  let zoom = null; // null = fit
+  function fitScale() {
+    const T = tpl(), pad = 24;
+    const w = (viewport.clientWidth - pad) / T.W, h = (viewport.clientHeight - pad) / T.H;
+    return Math.max(0.05, Math.min(w, h));
+  }
+  function applyZoom() {
+    const T = tpl(); if (!T) return;
+    const s = zoom == null ? fitScale() : zoom;
+    svg.style.width = Math.round(T.W * s) + "px";
+    svg.style.height = Math.round(T.H * s) + "px";
+    document.getElementById("zoomPct").textContent = zoom == null ? "Fit" : Math.round(s * 100) + "%";
+  }
+  function setZoom(z, anchorX, anchorY) {
+    const old = zoom == null ? fitScale() : zoom;
+    zoom = Math.min(4, Math.max(0.05, z));
+    // keep the point under the cursor (or the centre) in place
+    const ax = anchorX ?? viewport.clientWidth / 2, ay = anchorY ?? viewport.clientHeight / 2;
+    const cx = (viewport.scrollLeft + ax) / old, cy = (viewport.scrollTop + ay) / old;
+    applyZoom();
+    viewport.scrollLeft = cx * zoom - ax; viewport.scrollTop = cy * zoom - ay;
+  }
+  const cur = () => (zoom == null ? fitScale() : zoom);
+  document.getElementById("zoomIn").onclick = () => setZoom(cur() * 1.25);
+  document.getElementById("zoomOut").onclick = () => setZoom(cur() / 1.25);
+  document.getElementById("zoomFit").onclick = () => { zoom = null; applyZoom(); };
+  document.getElementById("zoom100").onclick = () => setZoom(1);
+  viewport.addEventListener("wheel", ev => {
+    if (!ev.ctrlKey) return;
+    ev.preventDefault();
+    const r = viewport.getBoundingClientRect();
+    setZoom(cur() * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), ev.clientX - r.left, ev.clientY - r.top);
+  }, { passive: false });
+  // drag to pan
+  let pan = null;
+  viewport.addEventListener("mousedown", ev => {
+    if (ev.button !== 0) return;
+    pan = { x: ev.clientX, y: ev.clientY, l: viewport.scrollLeft, t: viewport.scrollTop };
+    viewport.classList.add("panning");
+  });
+  window.addEventListener("mousemove", ev => {
+    if (!pan) return;
+    viewport.scrollLeft = pan.l - (ev.clientX - pan.x);
+    viewport.scrollTop = pan.t - (ev.clientY - pan.y);
+  });
+  window.addEventListener("mouseup", () => { pan = null; viewport.classList.remove("panning"); });
+  viewport.addEventListener("dblclick", () => setView(card.classList.contains("max") ? "normal" : "max"));
+
+  function setView(v) {
+    card.classList.toggle("min", v === "min");
+    card.classList.toggle("max", v === "max" || v === "full");
+    card.classList.toggle("full", v === "full");
+    document.body.classList.toggle("full", v === "full");
+    document.getElementById("btnMin").textContent = v === "min" ? "▔" : "▁";
+    document.getElementById("btnMin").title = v === "min" ? "Restore the drawing" : "Minimize the drawing";
+    document.getElementById("btnMax").textContent = v === "max" ? "❐" : "▢";
+    document.getElementById("btnMax").title = v === "max" ? "Restore (Esc)" : "Maximize the drawing (Esc to restore)";
+    document.getElementById("btnFull").title = v === "full" ? "Restore (Esc)" : "Full window, hides the input panel (Esc to restore)";
+    requestAnimationFrame(applyZoom);
+  }
+  const view = () => card.classList.contains("full") ? "full" : card.classList.contains("max") ? "max" : card.classList.contains("min") ? "min" : "normal";
+  document.getElementById("btnMin").onclick = () => setView(view() === "min" ? "normal" : "min");
+  document.getElementById("btnMax").onclick = () => setView(view() === "max" ? "normal" : "max");
+  document.getElementById("btnFull").onclick = () => setView(view() === "full" ? "normal" : "full");
+  window.addEventListener("keydown", ev => { if (ev.key === "Escape" && (view() === "max" || view() === "full")) setView("normal"); });
+  window.addEventListener("resize", () => { if (zoom == null) applyZoom(); });
+
+  // ---------- tables ----------
+  const n2 = v => Number(v).toFixed(2);
+  function drawTable(res) {
+    const head = ["BODY EXTN", "TOP OF STUB (L1)", "TOP OF STUB DIAGONAL", "CONC. LVL. (L2)", "CONC. LVL. DIAGONAL", "BOTTOM OF STUB (L3)", "BOTTOM OF STUB DIAGONAL"];
+    let html = "<tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr>";
+    for (const r of res.rows) html += `<tr><td>${r.label}</td><td>${n2(r.l1)}</td><td>${n2(r.l1_diag)}</td><td>${n2(r.l2)}</td><td>${n2(r.l2_diag)}</td><td>${n2(r.l3)}</td><td>${n2(r.l3_diag)}</td></tr>`;
+    document.getElementById("tbl").innerHTML = html;
+    const s = [
+      ["Tan (I90)", res.tan.toFixed(6)], ["Angle ° (J90)", res.angle_deg.toFixed(4)],
+      ["2 Tan (F92)", res.two_tan.toFixed(6)], ["Face (I92)", res.face.toFixed(6)],
+      ["Face × 2200 (J92)", res.face_x2200.toFixed(3)], ["Develop (I93)", res.develop.toFixed(6)],
+      ["Develop × 2200 (J93)", res.develop_x2200.toFixed(3)], ["Second slope tan (I95)", res.second_slope_tan.toFixed(6)],
+      ["Second slope ° (J95)", res.second_slope_deg.toFixed(4)], ["Second slope COS-1 (I97)", res.second_slope_cos.toFixed(6)],
+      ["Conc. lvl to bottom of stub (I87)", fmtGeneral(res.conc_to_bottom_of_stub)], ["Bottom vertical diff (I88)", res.bottom_vertical_diff.toFixed(4)],
+      ["L1 height (F93)", fmtGeneral(res.l1_height)], ["L3 height (F94)", res.l3_height.toFixed(4)],
+      ["Slope face length (AF32)", res.slope_face_length.toFixed(3)], ["Slope develop length (AG31)", res.slope_develop_length.toFixed(3)],
+      ["Hole gauge (N88 / N89)", `${fmtGeneral(res.gauge_total)} / ${fmtGeneral(res.gauge_half)}`],
+    ];
+    document.getElementById("summary").innerHTML = s.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("");
+  }
+
+  function update() {
+    try {
+      lastResult = E.calculate(state(), sheet);
+      showErr("");
+      drawFields(lastResult, document.getElementById("chkHighlight").checked);
+      drawTable(lastResult);
+    } catch (e) { showErr(e.message); }
+  }
+
+  // ---------- exports ----------
+  const stamp = () => new Date().toISOString().slice(0, 10);
+  const fileBase = () => "PROP_" + sheet.replace("-", "_");
+  function download(name, blobOrText, type) {
+    const blob = blobOrText instanceof Blob ? blobOrText : new Blob([blobOrText], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  const keepMarkers = () => document.getElementById("chkHighlightExport").checked;
+  const restoreMarkers = () => drawFields(lastResult, document.getElementById("chkHighlight").checked);
+
+  document.getElementById("btnPng").onclick = () => {
+    if (!lastResult) return;
+    const T = tpl();
+    drawFields(lastResult, keepMarkers());
+    const clone = svg.cloneNode(true);
+    clone.removeAttribute("style"); clone.setAttribute("width", T.W); clone.setAttribute("height", T.H);
+    const xml = new XMLSerializer().serializeToString(clone);
+    restoreMarkers();
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = T.W; c.height = T.H;
+      const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, T.W, T.H);
+      c.toBlob(b => download(`${fileBase()}_${stamp()}.png`, b), "image/png");
+    };
+    img.onerror = () => showErr("PNG export failed in this browser");
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+  };
+
+  document.getElementById("btnPdf").onclick = () => {
+    if (!lastResult) return;
+    const before = view();
+    if (before === "min") setView("normal");
+    drawFields(lastResult, keepMarkers());
+    const restore = () => { restoreMarkers(); if (before === "min") setView("min"); window.removeEventListener("afterprint", restore); };
+    window.addEventListener("afterprint", restore);
+    window.print();
+  };
+
+  document.getElementById("btnSave").onclick = () =>
+    download(`${fileBase()}_inputs_${stamp()}.json`, JSON.stringify({ sheet, inputs: state() }, null, 2), "application/json");
+  document.getElementById("btnLoad").onclick = () => document.getElementById("fileLoad").click();
+  document.getElementById("fileLoad").onchange = (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    f.text().then(txt => {
+      const d = JSON.parse(txt);
+      const s = SHEET_KEYS.includes(d.sheet) ? d.sheet : sheet;  // files from before LEG existed have no sheet -> current tab
+      states[s] = Object.assign(freshState(s), d.inputs || d);
+      store.set(storeKey(s), JSON.stringify(states[s]));
+      switchSheet(s);
+    }).catch(e => showErr("Could not read file: " + e.message));
+    ev.target.value = "";
+  };
+  document.getElementById("btnReset").onclick = () => {
+    const st = state();
+    states[sheet] = Object.assign(freshState(sheet), { acad_x: st.acad_x, acad_y: st.acad_y });
+    saveState(); buildInputs(); update();
+  };
+
+  document.getElementById("btnCopy").onclick = () => {
+    const tsv = [...document.querySelectorAll("#tbl tr")].map(tr => [...tr.children].map(td => td.textContent).join("\t")).join("\n");
+    navigator.clipboard.writeText(tsv).then(() => showErr(""), () => showErr("Clipboard blocked by browser"));
+  };
+  document.getElementById("btnCsv").onclick = () => {
+    const csv = [...document.querySelectorAll("#tbl tr")].map(tr => [...tr.children].map(td => `"${td.textContent}"`).join(",")).join("\r\n");
+    download(`${fileBase()}_table_${stamp()}.csv`, csv, "text/csv");
+  };
+
+  // AutoCAD: data file read by PROP1_AUTO.LSP (no prompts needed)
+  document.getElementById("btnLisp").onclick = () => {
+    if (!lastResult) return;
+    const r = lastResult, st = state(), f = v => Number(v).toFixed(8);
+    const lsp =
+`;; PROP1 data generated by Design Framework on ${new Date().toLocaleString()}
+;; Sheet: ${E.SHEETS[sheet]}
+;; Load this file in AutoCAD (APPLOAD or drag-drop), then run PROP1AUTO.
+;; BL2  = +0M body extn at conc. level            [F91]
+;; TAN2 = 2 x tower slope tan                     [F92]
+;; HT1  = L1 height (top of stub)                 [F93]
+;; HT3  = L3 height (bottom of stub)              [F94]
+;; X, Y = table insertion point
+(setq *PROP1-DATA*
+  (list
+    (cons "SHEET" "${sheet}")
+    (cons "BL2"  ${f(r.inputs.base_width_conc_lvl)})
+    (cons "TAN2" ${f(r.two_tan)})
+    (cons "HT1"  ${f(r.l1_height)})
+    (cons "HT3"  ${f(r.l3_height)})
+    (cons "X"    ${f(st.acad_x)})
+    (cons "Y"    ${f(st.acad_y)})
+  )
+)
+(princ "\\nPROP1 data loaded (${sheet}). Type PROP1AUTO to draw the table.")
+(princ)
+`;
+    download(`PROP1_DATA_${sheet.replace("-", "_")}_${stamp()}.lsp`, lsp, "text/plain");
+  };
+
+  document.getElementById("chkHighlight").onchange = update;
+
+  switchSheet(sheet);
+})();
+</script>
+</body>
+</html>

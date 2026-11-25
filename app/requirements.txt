@@ -1,0 +1,6 @@
+pytest
+openpyxl
+# only for tools/build_template.py
+pymupdf
+pillow
+numpy
