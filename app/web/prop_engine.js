@@ -31,8 +31,53 @@
     angle_size_text: "L150X150X12", // S37
     slope_vertical: 40595,        // AD32
     slope_horizontal: 10940,      // AE37
-    base_width_conc_lvl: 25365.76 // F91
+    base_width_conc_lvl: 25365.76, // F91
+
+    // ---- drawing labels / title block (text only, no calculation) ----
+    tower_slope_label: "TOWER SLOPE",          // AD40
+    balloon_mark: "51",                         // empty circle next to the angle size (not in the Excel)
+    rev_date: "04.09.2026",                     // L60
+    rev_no: "0",                                // P60
+    rev_desc: "First Submission for approval",  // R60
+    rev_designed: "",   // AA60  blank = Excel link =N75 (DSGN name)
+    rev_checked: "",    // AC60  blank = Excel link =L77 (the label "CHKD")
+    rev_drawn: "",      // AE60  blank = Excel link =N77 (CHKD name)
+    rev_checked_2: "FD",// AG60
+    rev_approved: "",   // AI60  blank = Excel link =N78 (APPD name)
+    client: "POWER GRID CORPORATION OF INDIA LTD", // L65
+    project: 'TRANSMISSION LINE PACKAGE TL04 FOR ±800KV HVDC BIPOLE LINE (HEXA LAPWING) BETWEEN KPS2 (HVDC) & NAGPUR (HVDC) (WITH DEDICATED METALLIC RETURN) - PART-4 ASSOCIATED WITH "TRANSMISSION SYSTEM FOR EVACUATION OF POWER FROM POTENTIAL RENEWABLE ENERGY ZONE IN KHAVDA AREA OF GUJARAT UNDER PHASE-V (8GW) PART A" THROUGH TARIFF BASED COMPETITIVE BIDDING (TBCB) ROUTE; SPECIFICATION NO.: CC/T/W-TW/DOM/A04/24/04450', // N71
+    dsgn_name: "UMW", drwn_name: "CRV", chkd_name: "CRV", appd_name: "RJR", // N75:N78
+    dsgn_date: "03.12.25", drwn_date: "03.12.25", // P75, P76
+    chkd_date: "",      // P77  blank = Excel link =P75
+    appd_date: "",      // P78  blank = Excel link =P77
+    doc_no: "O240-T-TL-0S-DC-XXXX" // N80:AG80, one character per cell
   };
+  const DOC_NO_CELLS = "N O P Q R S T U V W X Y Z AA AB AC AD AE AF AG".split(" "); // row 80
+
+  // Text for each title-block cell (and the balloon), following the Excel links
+  // when an override field is left blank.
+  function titleBlock(input) {
+    const p = Object.assign({}, DEFAULT_INPUTS, input || {});
+    const str = v => (v == null ? "" : String(v));
+    const pick = (v, linked) => (str(v).trim() ? str(v) : str(linked));
+    const chkdDate = pick(p.chkd_date, p.dsgn_date);
+    const cells = {
+      AD40: p.tower_slope_label, BALLOON: p.balloon_mark,
+      L60: p.rev_date, P60: p.rev_no, R60: p.rev_desc,
+      AA60: pick(p.rev_designed, p.dsgn_name),
+      AC60: pick(p.rev_checked, "CHKD"),
+      AE60: pick(p.rev_drawn, p.chkd_name),
+      AG60: p.rev_checked_2,
+      AI60: pick(p.rev_approved, p.appd_name),
+      L65: p.client, N71: p.project,
+      N75: p.dsgn_name, N76: p.drwn_name, N77: p.chkd_name, N78: p.appd_name,
+      P75: p.dsgn_date, P76: p.drwn_date, P77: chkdDate, P78: pick(p.appd_date, chkdDate)
+    };
+    const doc = str(p.doc_no);
+    DOC_NO_CELLS.forEach((c, i) => { cells[c + "80"] = doc[i] || ""; });
+    for (const k in cells) cells[k] = str(cells[k]);
+    return cells;
+  }
 
   // Values saved in the Excel for each sheet (only F91 differs)
   function defaultInputs(sheet) {
@@ -90,7 +135,7 @@
     });
 
     return {
-      sheet, inputs: p,
+      sheet, inputs: p, labels: titleBlock(p),
       slope_face_length: af32, slope_develop_length: ag31, slope_horizontal_2: ah34,
       gauge_total: n88, gauge_half: n89,
       conc_to_bottom_of_stub: i87, bottom_vertical_diff: i88,
@@ -101,5 +146,5 @@
     };
   }
 
-  return { SHEETS, BODY_EXTENSIONS, DEFAULT_INPUTS, defaultInputs, calculate, extnLabel };
+  return { SHEETS, BODY_EXTENSIONS, DEFAULT_INPUTS, DOC_NO_CELLS, defaultInputs, calculate, titleBlock, extnLabel };
 });

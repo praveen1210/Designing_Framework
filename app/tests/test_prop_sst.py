@@ -86,3 +86,37 @@ def test_bad_input_rejected():
 @pytest.mark.parametrize("ext,label", [(-3000, "-3.0M BODY EXTN"), (0, "+0.0M BODY EXTN"), (9000, "+9.0M BODY EXTN")])
 def test_extension_labels(ext, label):
     assert extn_label(ext) == label
+
+
+# ---------------- title block / drawing labels ----------------
+from prop_sst import title_block  # noqa: E402
+
+
+@pytest.mark.parametrize("case", GOLDEN["cases"], ids=[c["name"] for c in GOLDEN["cases"]])
+def test_title_block_defaults_match_excel(case):
+    labels = title_block(SstInputs.from_dict(case["inputs"], case["sheet"]))
+    for cell, expected in case["labels"].items():
+        assert labels[cell] == expected, cell
+
+
+def test_title_block_blank_fields_follow_excel_links():
+    tb = title_block(SstInputs(dsgn_name="ABC", chkd_name="XYZ", appd_name="PQR", dsgn_date="01.01.27"))
+    assert tb["AA60"] == "ABC"           # =N75
+    assert tb["AE60"] == "XYZ"           # =N77
+    assert tb["AI60"] == "PQR"           # =N78
+    assert tb["P77"] == tb["P78"] == "01.01.27"   # =P75, =P77
+
+
+def test_title_block_overrides_win():
+    tb = title_block(SstInputs(rev_checked="KMR", chkd_date="05.01.27", appd_date="06.01.27"))
+    assert tb["AC60"] == "KMR"
+    assert (tb["P77"], tb["P78"]) == ("05.01.27", "06.01.27")
+
+
+def test_doc_no_one_char_per_cell():
+    tb = title_block(SstInputs(doc_no="ABC"))
+    assert (tb["N80"], tb["O80"], tb["P80"], tb["Q80"], tb["AG80"]) == ("A", "B", "C", "", "")
+
+
+def test_balloon_default_is_51():
+    assert title_block(SstInputs())["BALLOON"] == "51"

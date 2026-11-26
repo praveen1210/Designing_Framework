@@ -19,6 +19,24 @@ for (const c of golden.cases) {
   });
 }
 
+for (const c of golden.cases) {
+  test(`JS title block matches Excel: ${c.name}`, () => {
+    const r = calculate(c.inputs, c.sheet);
+    for (const [cell, v] of Object.entries(c.labels)) assert.strictEqual(r.labels[cell], v, cell);
+  });
+}
+
+test("title block: blank follows Excel link, override wins, doc no split", () => {
+  const { titleBlock } = require(path.join(__dirname, "..", "web", "prop_engine.js"));
+  let tb = titleBlock({ dsgn_name: "ABC", chkd_name: "XYZ", dsgn_date: "01.01.27" });
+  assert.strictEqual(tb.AA60, "ABC"); assert.strictEqual(tb.AE60, "XYZ");
+  assert.strictEqual(tb.P77, "01.01.27"); assert.strictEqual(tb.P78, "01.01.27");
+  tb = titleBlock({ rev_checked: "KMR", appd_date: "06.01.27", doc_no: "ABC" });
+  assert.strictEqual(tb.AC60, "KMR"); assert.strictEqual(tb.P78, "06.01.27");
+  assert.deepStrictEqual([tb.N80, tb.O80, tb.P80, tb.Q80], ["A", "B", "C", ""]);
+  assert.strictEqual(tb.BALLOON, "51");
+});
+
 test("rejects bad input", () => {
   assert.throws(() => calculate({ slope_vertical: 0 }));
   assert.throws(() => calculate({}, "SST-ARM"));

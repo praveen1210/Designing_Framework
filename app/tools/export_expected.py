@@ -31,6 +31,8 @@ RESULT_CELLS = {
     "second_slope_tan": "I95", "second_slope_deg": "J95",
     "second_slope_cos": "I97", "l1_height": "F93", "l3_height": "F94",
 }
+LABEL_CELLS = ("AD40 L60 P60 R60 AA60 AC60 AE60 AG60 AI60 L65 N71 N75 N76 N77 N78 P75 P76 P77 P78".split()
+               + [f"{c}80" for c in "N O P Q R S T U V W X Y Z AA AB AC AD AE AF AG".split()])
 ROW_COLS = {"l1": "E", "l1_diag": "F", "l2": "G", "l2_diag": "H", "l3": "I", "l3_diag": "J"}
 
 
@@ -47,6 +49,8 @@ def export(xlsx_path: str, sheet: str = "SST-BODY") -> dict:
             {"label": ws[f"D{r}"].value, **{k: ws[f"{col}{r}"].value for k, col in ROW_COLS.items()}}
             for r in range(74, 83)
         ],
+        # text Excel shows in the title block (numbers as Excel prints them, e.g. 0 -> "0")
+        "labels": {c: ("" if ws[c].value is None else str(ws[c].value)) for c in LABEL_CELLS},
     }
     return case
 

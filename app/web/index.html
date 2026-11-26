@@ -98,7 +98,7 @@
   <input type="file" id="fileLoad" accept=".json" hidden>
   <button id="btnPng">Export PNG</button>
   <button id="btnPdf" class="primary" title="Opens print: choose Save as PDF, A3 landscape, margins None">Export PDF</button>
-  <button id="btnLisp" title="Data file for PROP1_AUTO.LSP in AutoCAD">AutoCAD data</button>
+  <button id="btnXlsx" title="Your PROP_Calculator workbook filled with these values (both sheets); Excel recalculates on open">Export Excel</button>
 </header>
 
 <aside id="inputs"></aside>
@@ -141,6 +141,8 @@
 <script src="prop_engine.js"></script>
 <script src="sst_body_template.js"></script>
 <script src="sst_leg_template.js"></script>
+<script src="excel_template.js"></script>
+<script src="excel_export.js"></script>
 <script>
 (function () {
   "use strict";
@@ -164,12 +166,14 @@
     ["Tower slope", [
       ["slope_vertical", "Slope vertical", "AD32", "num"],
       ["slope_horizontal", "Slope horizontal", "AE37", "num"],
+      ["tower_slope_label", "Label", "AD40", "text"],
     ]],
     ["Leg / angle", [
       ["leg_width", "Leg size (width)", "B32", "num"],
       ["leg_size_text_2", "Leg size text 2", "B31", "text"],
       ["leg_size_text_3", "Leg size text 3", "B30", "text"],
       ["angle_size_text", "Angle size", "S37", "text"],
+      ["balloon_mark", "Balloon no. (circle)", "new", "text"],
     ]],
     ["Hole details", [
       ["hole_gap", "Hole gap", "T35", "num"],
@@ -178,9 +182,33 @@
       ["hole_text", "Hole text", "Y30", "text"],
       ["slotted_hole_text", "Slotted hole text", "N33", "area"],
     ]],
+    ["Revision", [
+      ["rev_date", "Date", "L60", "text"],
+      ["rev_no", "Rev. no.", "P60", "text"],
+      ["rev_desc", "Description", "R60", "area"],
+      ["rev_designed", "Designed", "AA60", "link"],
+      ["rev_checked", "Checked", "AC60", "link"],
+      ["rev_drawn", "Drawn", "AE60", "link"],
+      ["rev_checked_2", "Checked (2)", "AG60", "text"],
+      ["rev_approved", "Approved", "AI60", "link"],
+    ]],
+    ["Title block", [
+      ["client", "Client", "L65", "area"],
+      ["project", "Project", "N71", "area"],
+      ["dsgn_name", "DSGN name", "N75", "text"],
+      ["dsgn_date", "DSGN date", "P75", "text"],
+      ["drwn_name", "DRWN name", "N76", "text"],
+      ["drwn_date", "DRWN date", "P76", "text"],
+      ["chkd_name", "CHKD name", "N77", "text"],
+      ["chkd_date", "CHKD date", "P77", "link"],
+      ["appd_name", "APPD name", "N78", "text"],
+      ["appd_date", "APPD date", "P78", "link"],
+      ["doc_no", "Doc. No. (20 boxes)", "N80:AG80", "doc"],
+    ]],
   ];
-  const ACAD_FIELDS = [["acad_x", "Table insertion X"], ["acad_y", "Table insertion Y"]];
-  const NUM_KEYS = INPUT_GROUPS.flatMap(g => g[1]).filter(f => f[3] === "num").map(f => f[0]).concat(["acad_x", "acad_y"]);
+  // "link" fields: blank = same as the Excel formula (shown as placeholder)
+  const LINK_CELL = { rev_designed: "AA60", rev_checked: "AC60", rev_drawn: "AE60", rev_approved: "AI60", chkd_date: "P77", appd_date: "P78" };
+  const NUM_KEYS = INPUT_GROUPS.flatMap(g => g[1]).filter(f => f[3] === "num").map(f => f[0]);
 
   // ---------- what goes in each cell of the drawing ----------
   const fmtGeneral = v => (typeof v === "number" ? String(Math.round(v * 1e6) / 1e6) : String(v ?? ""));
@@ -196,6 +224,9 @@
     AH34: ["=slope_horizontal_2", fmtGeneral], S35: ["=gauge_half", fmtGeneral], U35: ["=gauge_half", fmtGeneral],
     AF32: ["=slope_face_length", fmtFixed(4)], AG31: ["=slope_develop_length", fmtFixed(4)],
   };
+  ["AD40", "BALLOON", "L60", "P60", "R60", "AA60", "AC60", "AE60", "AG60", "AI60", "L65", "N71",
+   "N75", "N76", "N77", "N78", "P75", "P76", "P77", "P78", ...E.DOC_NO_CELLS.map(c => c + "80")]
+    .forEach(c => { CELL_MAP[c] = ["@" + c, String, true]; });
   const TABLE_COLS = { E: "l1", F: "l1_diag", G: "l2", H: "l2_diag", I: "l3", J: "l3_diag" };
   E.BODY_EXTENSIONS.forEach((_, i) => {
     for (const [col, key] of Object.entries(TABLE_COLS)) CELL_MAP[col + (74 + i)] = ["#" + i + "." + key, fmtFixed(2)];
@@ -204,7 +235,7 @@
   // ---------- state (one set of inputs per sheet) ----------
   let sheet = SHEET_KEYS.includes(store.get("designFramework.sheet")) ? store.get("designFramework.sheet") : "SST-BODY";
   const states = {};
-  function freshState(s) { return Object.assign(E.defaultInputs(s), { acad_x: 0, acad_y: 0 }); }
+  function freshState(s) { return E.defaultInputs(s); }
   SHEET_KEYS.forEach(s => {
     states[s] = freshState(s);
     try { const saved = JSON.parse(store.get(storeKey(s)) || "null"); if (saved) Object.assign(states[s], saved); } catch (e) {}
@@ -236,20 +267,31 @@
       html += `<fieldset><legend>${title}</legend>`;
       for (const [key, label, cell, kind] of fields) {
         const ctl = kind === "area"
-          ? `<textarea data-key="${key}" rows="2"></textarea>`
+          ? `<textarea data-key="${key}" rows="${key === "project" ? 5 : 2}"></textarea>`
+          : kind === "doc"
+          ? `<input data-key="${key}" maxlength="${E.DOC_NO_CELLS.length}" spellcheck="false" style="font-family:Consolas,monospace;letter-spacing:.5px">`
           : `<input data-key="${key}" ${kind === "num" ? 'inputmode="decimal"' : ""}>`;
         html += `<label><span>${label}<small><span class="cell">${cell}</span></small></span>${ctl}</label>`;
       }
       html += "</fieldset>";
     }
-    html += '<fieldset><legend>AutoCAD table position</legend>';
-    for (const [key, label] of ACAD_FIELDS) html += `<label><span>${label}</span><input data-key="${key}" inputmode="decimal"></label>`;
-    html += '<p class="hint">Used by “AutoCAD data” with PROP1_AUTO.LSP.</p></fieldset>';
+    html += '<p class="hint">Grey fields follow the Excel formula; type to override, clear to follow again.</p>';
     aside.innerHTML = html;
     aside.querySelectorAll("[data-key]").forEach(el => {
-      el.value = st[el.dataset.key];
+      el.value = st[el.dataset.key] ?? "";
       el.addEventListener("input", onInput);
     });
+    // wide text fields use the full panel width
+    aside.querySelectorAll('textarea[data-key="project"], textarea[data-key="client"], textarea[data-key="rev_desc"], input[data-key="doc_no"]').forEach(el => {
+      el.closest("label").style.gridTemplateColumns = "1fr";
+    });
+  }
+  function refreshLinkPlaceholders() {
+    if (!lastResult) return;
+    for (const [key, cell] of Object.entries(LINK_CELL)) {
+      const el = aside.querySelector(`[data-key="${key}"]`);
+      if (el) { el.placeholder = "= " + lastResult.labels[cell] + " (link)"; el.title = "Leave blank to follow the Excel formula"; }
+    }
   }
   function onInput(ev) {
     const el = ev.target, key = el.dataset.key;
@@ -284,14 +326,37 @@
     const [src, fmt] = CELL_MAP[cell];
     let v;
     if (src.startsWith("=")) v = res[src.slice(1)];
+    else if (src.startsWith("@")) v = res.labels[src.slice(1)];
     else if (src.startsWith("#")) { const [i, k] = src.slice(1).split("."); v = res.rows[+i][k]; }
     else v = res.inputs[src];
     return fmt(v);
   }
   function fontFamily(f) {
     if (/black/i.test(f.font)) return '"Arial Black", Arial, sans-serif';
-    if (/narrow/i.test(f.font)) return '"Arial Narrow", Arial, sans-serif';
+    if (/narrow/i.test(f.font)) return '"Arial Narrow", "Liberation Sans Narrow", "Roboto Condensed", Arial, sans-serif';
     return 'Calibri, Carlito, "Segoe UI", Arial, sans-serif';
+  }
+
+  // word-wrap for cells that wrap in Excel (project text); shrinks the font if it still doesn't fit
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  function wrapLines(text, f, family, maxW, maxH) {
+    let size = f.size, lines;
+    for (let tries = 0; tries < 30; tries++) {
+      measureCtx.font = `${f.bold ? "bold " : ""}${size}px ${family}`;
+      lines = [];
+      for (const para of text.split("\n")) {
+        let line = "";
+        for (const word of para.split(/\s+/).filter(Boolean)) {
+          const test = line ? line + " " + word : word;
+          if (line && measureCtx.measureText(test).width > maxW) { lines.push(line); line = word; }
+          else line = test;
+        }
+        lines.push(line);
+      }
+      if (lines.length * size * 1.1 <= maxH || size < 8) break;
+      size *= 0.94;
+    }
+    return { lines, size };
   }
 
   function drawFields(res, highlight) {
@@ -313,18 +378,28 @@
       const isNumber = /^-?[\d.]+$/.test(text);
       const align = f.align === "general" ? (isNumber ? "right" : "left") : f.align;
       const t = document.createElementNS(SVGNS, "text");
-      t.setAttribute("font-family", fontFamily(f));
-      t.setAttribute("font-size", f.size);
+      const family = fontFamily(f);
+      const pad = 3;
+      let lines = text.split("\n"), size = f.size;
+      if (f.wrap && f.rot !== 90) ({ lines, size } = wrapLines(text, f, family, w - 2 * pad - 4, h - 2));
+      t.setAttribute("font-family", family);
+      t.setAttribute("font-size", size);
       if (f.bold) t.setAttribute("font-weight", "bold");
       t.setAttribute("text-anchor", align === "center" ? "middle" : align === "right" ? "end" : "start");
       t.setAttribute("fill", "#000");
-      const pad = 3, lines = text.split("\n"), lh = f.size * 1.1;
+      const lh = size * 1.1;
       const startDy = -((lines.length - 1) * lh) / 2;
+      // a line wider than its box (long edit) is squeezed to fit instead of running over the grid
+      measureCtx.font = `${f.bold ? "bold " : ""}${size}px ${family}`;
+      const room = (f.rot === 90 ? h : w) - 2 * pad;
       lines.forEach((line, i) => {
         const ts = document.createElementNS(SVGNS, "tspan");
         ts.setAttribute("x", 0);
-        ts.setAttribute("dy", i === 0 ? startDy + f.size * 0.35 : lh);
+        ts.setAttribute("dy", i === 0 ? startDy + size * 0.35 : lh);
         ts.textContent = line;
+        if (isInput && room > 0 && measureCtx.measureText(line).width > room) {
+          ts.setAttribute("textLength", room); ts.setAttribute("lengthAdjust", "spacingAndGlyphs");
+        }
         t.appendChild(ts);
       });
       if (f.rot === 90) {
@@ -437,6 +512,7 @@
       showErr("");
       drawFields(lastResult, document.getElementById("chkHighlight").checked);
       drawTable(lastResult);
+      refreshLinkPlaceholders();
     } catch (e) { showErr(e.message); }
   }
 
@@ -496,8 +572,7 @@
     ev.target.value = "";
   };
   document.getElementById("btnReset").onclick = () => {
-    const st = state();
-    states[sheet] = Object.assign(freshState(sheet), { acad_x: st.acad_x, acad_y: st.acad_y });
+    states[sheet] = freshState(sheet);
     saveState(); buildInputs(); update();
   };
 
@@ -510,34 +585,18 @@
     download(`${fileBase()}_table_${stamp()}.csv`, csv, "text/csv");
   };
 
-  // AutoCAD: data file read by PROP1_AUTO.LSP (no prompts needed)
-  document.getElementById("btnLisp").onclick = () => {
-    if (!lastResult) return;
-    const r = lastResult, st = state(), f = v => Number(v).toFixed(8);
-    const lsp =
-`;; PROP1 data generated by Design Framework on ${new Date().toLocaleString()}
-;; Sheet: ${E.SHEETS[sheet]}
-;; Load this file in AutoCAD (APPLOAD or drag-drop), then run PROP1AUTO.
-;; BL2  = +0M body extn at conc. level            [F91]
-;; TAN2 = 2 x tower slope tan                     [F92]
-;; HT1  = L1 height (top of stub)                 [F93]
-;; HT3  = L3 height (bottom of stub)              [F94]
-;; X, Y = table insertion point
-(setq *PROP1-DATA*
-  (list
-    (cons "SHEET" "${sheet}")
-    (cons "BL2"  ${f(r.inputs.base_width_conc_lvl)})
-    (cons "TAN2" ${f(r.two_tan)})
-    (cons "HT1"  ${f(r.l1_height)})
-    (cons "HT3"  ${f(r.l3_height)})
-    (cons "X"    ${f(st.acad_x)})
-    (cons "Y"    ${f(st.acad_y)})
-  )
-)
-(princ "\\nPROP1 data loaded (${sheet}). Type PROP1AUTO to draw the table.")
-(princ)
-`;
-    download(`PROP1_DATA_${sheet.replace("-", "_")}_${stamp()}.lsp`, lsp, "text/plain");
+  // Excel: the real workbook filled with the page values (both sheets, each with its own tab's values)
+  document.getElementById("btnXlsx").onclick = async () => {
+    const btn = document.getElementById("btnXlsx");
+    if (!window.EXCEL_TEMPLATE || !window.ExcelExport) { showErr("Excel template missing (web/excel_template.js)"); return; }
+    if (typeof DecompressionStream === "undefined") { showErr("Export Excel needs a current Chrome or Edge"); return; }
+    btn.disabled = true; btn.textContent = "Exporting…";
+    try {
+      const blob = await window.ExcelExport.build(window.EXCEL_TEMPLATE.data, states);
+      download(`PROP_Calculator_${stamp()}.xlsx`, blob);
+      showErr("");
+    } catch (e) { showErr("Excel export failed: " + e.message); }
+    finally { btn.disabled = false; btn.textContent = "Export Excel"; }
   };
 
   document.getElementById("chkHighlight").onchange = update;

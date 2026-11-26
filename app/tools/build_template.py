@@ -5,9 +5,11 @@ Run this when the drawing or the cell layout in the Excel changes
 (or copy it for the SST-LEG sheet later).
 
 What it does:
- 1. Copies the workbook and blanks the label cells (yellow inputs + calculated
-    labels + the table) at XML level, so pictures and shapes are kept.
+ 1. Copies the workbook and blanks the label cells (yellow inputs, calculated
+    labels, the table, title-block fields) at XML level, so pictures and shapes are kept.
  2. Copies it again with each label cell filled with its own marker colour.
+    Shapes that get a text field (the empty balloon circle) are filled with a
+    marker colour too.
  3. Prints both to PDF with LibreOffice and rasterises the sheet's page at 200 dpi.
  4. Finds each marker colour -> pixel box of that cell on the page.
  5. Removes leftover yellow from the background and writes the template JS.
@@ -40,8 +42,16 @@ from PIL import Image
 warnings.filterwarnings("ignore")
 
 SHEETS = {"SST-BODY": "PROP TYPE SST-BODY", "SST-LEG": "PROP TYPE SST-LEG"}
-LABEL_CELLS = ("C18 C25 B30 B31 B32 Y30 W31 W32 AD32 AE37 S37 T35 N33 C40 "
-               "AG31 AF32 AH34 S35 U35").split() + [f"{c}{r}" for r in range(74, 83) for c in "EFGHIJ"]
+LABEL_CELLS = (
+    # drawing labels: yellow inputs + values calculated from them
+    "C18 C25 B30 B31 B32 Y30 W31 W32 AD32 AE37 S37 T35 N33 C40 AG31 AF32 AH34 S35 U35 AD40 "
+    # title block: revision row, client, project, names/dates
+    "L60 P60 R60 AA60 AC60 AE60 AG60 AI60 L65 N71 N75 N76 N77 N78 P75 P76 P77 P78"
+).split() + [f"{c}{r}" for r in range(74, 83) for c in "EFGHIJ"] \
+  + [f"{c}80" for c in "N O P Q R S T U V W X Y Z AA AB AC AD AE AF AG".split()]   # doc no., 1 char per cell
+
+# Shapes that get a text field: field name -> preset geometry of the shape in the drawing
+SHAPE_FIELDS = {"BALLOON": "flowChartConnector"}   # empty circle next to the angle size (item no. 51)
 DPI = 200
 
 
@@ -54,14 +64,29 @@ def sheet_xml_path(z: zipfile.ZipFile, sheet_name: str) -> str:
     return "xl/" + target.group(1).lstrip("/").replace("xl/", "")
 
 
-def rewrite(src: Path, dst: Path, sheet_xml: str, edit):
+def drawing_xml_path(z: zipfile.ZipFile, sheet_xml: str):
+    rels_path = sheet_xml.replace("worksheets/", "worksheets/_rels/") + ".rels"
+    try:
+        rels = z.read(rels_path).decode("utf8")
+    except KeyError:
+        return None
+    m = re.search(r'Target="([^"]*drawings/[^"]+)"', rels)
+    return "xl/drawings/" + m.group(1).split("drawings/")[1] if m else None
+
+
+def marker_rgb(i: int) -> str:
+    return "%02X%02XE7" % (3 + 3 * (i % 80), 0x7B + 8 * (i // 80))
+
+
+def rewrite(src: Path, dst: Path, edits: dict):
+    """Copy the xlsx, applying edits {part path: fn(xml) -> xml}."""
     with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zo:
         for item in zi.infolist():
             if item.filename == "xl/calcChain.xml":
                 continue
             data = zi.read(item.filename)
-            if item.filename == sheet_xml:
-                data = edit(data.decode("utf8")).encode("utf8")
+            if item.filename in edits:
+                data = edits[item.filename](data.decode("utf8")).encode("utf8")
             elif item.filename == "[Content_Types].xml":
                 data = re.sub(rb'<Override PartName="/xl/calcChain.xml"[^>]*/>', b"", data)
             elif item.filename == "xl/_rels/workbook.xml.rels":
@@ -89,7 +114,7 @@ def add_marker_styles(src: Path, dst: Path):
     nf, nx = int(fills_m.group(1)), int(xfs_m.group(1))
     colors, new_fills, new_xfs, style_idx = {}, "", "", {}
     for i, c in enumerate(LABEL_CELLS):
-        rgb = "%02X7BE7" % (i * 3 + 3)
+        rgb = marker_rgb(i)
         colors[c] = rgb
         new_fills += f'<fill><patternFill patternType="solid"><fgColor rgb="FF{rgb}"/><bgColor indexed="64"/></patternFill></fill>'
         new_xfs += f'<xf numFmtId="0" fontId="0" fillId="{nf + i}" borderId="0" xfId="0" applyFill="1"/>'
@@ -139,10 +164,11 @@ def main():
 
     with zipfile.ZipFile(src) as z:
         sx = sheet_xml_path(z, SHEET)
+        dx = drawing_xml_path(z, sx)
 
     # 1. clean background
     clean = tmp / "clean.xlsx"
-    rewrite(src, clean, sx, blank_cells)
+    rewrite(src, clean, {sx: blank_cells})
 
     # 2. marker copy (merged ranges get the colour on every cell)
     styled = tmp / "styled.xlsx"
@@ -155,14 +181,28 @@ def main():
             for mc in merged_cells(ws, c)[1:]:
                 xml = re.sub(r'<c r="%s"( s="\d+")?' % mc, f'<c r="{mc}" s="{style_idx[c]}"', xml, count=1)
         return xml
-    rewrite(styled, marker, sx, mark)
+    shape_colors = {name: marker_rgb(len(LABEL_CELLS) + i) for i, name in enumerate(SHAPE_FIELDS)}
+
+    def mark_shapes(xml):
+        for name, prst in SHAPE_FIELDS.items():
+            i = xml.find(f'prst="{prst}"')
+            if i < 0:
+                print("WARNING: shape not found:", name)
+                continue
+            end = xml.find("</a:prstGeom>", i) + len("</a:prstGeom>")
+            xml = xml[:end] + f'<a:solidFill><a:srgbClr val="{shape_colors[name]}"/></a:solidFill>' + xml[end:]
+        return xml
+    edits = {sx: mark}
+    if dx:
+        edits[dx] = mark_shapes
+    rewrite(styled, marker, edits)
 
     bg = to_png(clean, a.soffice, tmp, page_no, n_sheets)
     mk = to_png(marker, a.soffice, tmp, page_no, n_sheets)
 
     # 3. boxes
     boxes = {}
-    for c, hexc in colors.items():
+    for c, hexc in {**colors, **shape_colors}.items():
         r, g, b = (int(hexc[i:i + 2], 16) for i in (0, 2, 4))
         ys, xs = np.nonzero((abs(mk[..., 0] - r) <= 1) & (mk[..., 1] == g) & (mk[..., 2] == b))
         if len(xs) == 0:
@@ -170,9 +210,12 @@ def main():
             continue
         boxes[c] = [int(xs.min()), int(ys.min()), int(xs.max() + 1), int(ys.max() + 1)]
 
-    # 4. remove leftover yellow fill around label cells
+    # 4. remove leftover yellow fill around the yellow (input) cells only - other
+    #    boxes (e.g. the client name) sit next to coloured logos
     R, G, B = bg[..., 0], bg[..., 1], bg[..., 2]
-    for x0, y0, x1, y1 in boxes.values():
+    yellow_cells = [c for c in LABEL_CELLS if c in boxes and ws[c].fill.fill_type
+                    and str(ws[c].fill.fgColor.rgb) == "FFFFFF00"]
+    for x0, y0, x1, y1 in (boxes[c] for c in yellow_cells):
         sl = (slice(max(0, y0 - 3), y1 + 3), slice(max(0, x0 - 3), x1 + 3))
         yel = (R[sl] > 180) & (G[sl] > 180) & (B[sl] < 200) & ((R[sl] - B[sl]) > 40)
         bg[sl][yel] = 255
@@ -182,11 +225,17 @@ def main():
     px_per_pt = (boxes["E74"][3] - boxes["E74"][1]) / row_pt
     fields = {}
     for c, box in boxes.items():
+        if c in SHAPE_FIELDS:
+            h = box[3] - box[1]
+            fields[c] = {"box": box, "rot": 0, "align": "center", "size": round(h * 0.5, 1),
+                         "bold": False, "font": "Arial Narrow", "wrap": False}
+            continue
         cell = ws[c]
         fields[c] = {"box": box, "rot": cell.alignment.textRotation or 0,
                      "align": cell.alignment.horizontal or "general",
                      "size": round((cell.font.sz or 11) * px_per_pt, 1),
-                     "bold": bool(cell.font.b), "font": cell.font.name}
+                     "bold": bool(cell.font.b), "font": cell.font.name,
+                     "wrap": bool(cell.alignment.wrapText)}
 
     img = Image.fromarray(bg.astype("uint8")).quantize(colors=48, method=Image.Quantize.MEDIANCUT,
                                                        dither=Image.Dither.NONE)
@@ -196,7 +245,7 @@ def main():
            "bg": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(), "fields": fields}
     Path(out).write_text(
         "// Generated by tools/build_template.py from the Excel sheet. Background = sheet page with the\n"
-        "// yellow/table cells blanked; fields = pixel box of each cell on that page (200 dpi, A3).\n"
+        "// label cells blanked; fields = pixel box of each cell (or shape) on that page (200 dpi, A3).\n"
         "window.TEMPLATES = window.TEMPLATES || {};\n"
         f'window.TEMPLATES["{a.sheet}"] = {json.dumps(tpl)};\n', encoding="utf8")
     print(f"written {out}  ({len(fields)} fields)")

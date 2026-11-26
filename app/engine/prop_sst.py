@@ -22,6 +22,15 @@ from dataclasses import dataclass, asdict, field, replace
 SHEETS = {"SST-BODY": "PROP TYPE SST-BODY", "SST-LEG": "PROP TYPE SST-LEG"}
 BODY_EXTENSIONS = [-3000, -1500, 0, 1500, 3000, 4500, 6000, 7500, 9000]
 
+PROJECT_TEXT = (
+    'TRANSMISSION LINE PACKAGE TL04 FOR ±800KV HVDC BIPOLE LINE (HEXA LAPWING) BETWEEN KPS2 (HVDC) '
+    '& NAGPUR (HVDC) (WITH DEDICATED METALLIC RETURN) - PART-4 ASSOCIATED WITH "TRANSMISSION SYSTEM '
+    'FOR EVACUATION OF POWER FROM POTENTIAL RENEWABLE ENERGY ZONE IN KHAVDA AREA OF GUJARAT UNDER '
+    'PHASE-V (8GW) PART A" THROUGH TARIFF BASED COMPETITIVE BIDDING (TBCB) ROUTE; SPECIFICATION NO.: '
+    'CC/T/W-TW/DOM/A04/24/04450'
+)
+DOC_NO_CELLS = "N O P Q R S T U V W X Y Z AA AB AC AD AE AF AG".split()  # row 80
+
 # Excel N88 is "=150-T35". 150 is hard-coded in the sheet (the angle flange
 # width of L150X150X12). Kept identical to the Excel on purpose.
 ANGLE_FLANGE_FOR_GAUGE = 150
@@ -44,6 +53,29 @@ class SstInputs:
     slope_vertical: float = 40595          # AD32
     slope_horizontal: float = 10940        # AE37
     base_width_conc_lvl: float = 25365.76  # F91  (+0M body extn at conc. level)
+
+    # ---- drawing labels / title block (text only, no calculation) ----
+    tower_slope_label: str = "TOWER SLOPE"        # AD40
+    balloon_mark: str = "51"                       # empty circle next to the angle size (not in the Excel)
+    rev_date: str = "04.09.2026"                   # L60
+    rev_no: str = "0"                              # P60
+    rev_desc: str = "First Submission for approval"  # R60
+    rev_designed: str = ""     # AA60  blank = Excel link =N75 (DSGN name)
+    rev_checked: str = ""      # AC60  blank = Excel link =L77 (the label "CHKD")
+    rev_drawn: str = ""        # AE60  blank = Excel link =N77 (CHKD name)
+    rev_checked_2: str = "FD"  # AG60
+    rev_approved: str = ""     # AI60  blank = Excel link =N78 (APPD name)
+    client: str = "POWER GRID CORPORATION OF INDIA LTD"  # L65
+    project: str = PROJECT_TEXT                    # N71
+    dsgn_name: str = "UMW"                         # N75
+    drwn_name: str = "CRV"                         # N76
+    chkd_name: str = "CRV"                         # N77
+    appd_name: str = "RJR"                         # N78
+    dsgn_date: str = "03.12.25"                    # P75
+    drwn_date: str = "03.12.25"                    # P76
+    chkd_date: str = ""        # P77  blank = Excel link =P75
+    appd_date: str = ""        # P78  blank = Excel link =P77
+    doc_no: str = "O240-T-TL-0S-DC-XXXX"           # N80:AG80, one character per cell
 
     @classmethod
     def from_dict(cls, d: dict, sheet: str = "SST-BODY") -> "SstInputs":
@@ -97,6 +129,32 @@ class SstResult:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def title_block(inp: SstInputs) -> dict:
+    """Text for each title-block cell (and the balloon), following the Excel links
+    when an override field is left blank."""
+    def pick(v, linked):
+        v = "" if v is None else str(v)
+        return v if v.strip() else linked
+    chkd_date = pick(inp.chkd_date, inp.dsgn_date)
+    doc = str(inp.doc_no or "")
+    cells = {
+        "AD40": inp.tower_slope_label, "BALLOON": inp.balloon_mark,
+        "L60": inp.rev_date, "P60": inp.rev_no, "R60": inp.rev_desc,
+        "AA60": pick(inp.rev_designed, inp.dsgn_name),
+        "AC60": pick(inp.rev_checked, "CHKD"),
+        "AE60": pick(inp.rev_drawn, inp.chkd_name),
+        "AG60": inp.rev_checked_2,
+        "AI60": pick(inp.rev_approved, inp.appd_name),
+        "L65": inp.client, "N71": inp.project,
+        "N75": inp.dsgn_name, "N76": inp.drwn_name, "N77": inp.chkd_name, "N78": inp.appd_name,
+        "P75": inp.dsgn_date, "P76": inp.drwn_date,
+        "P77": chkd_date, "P78": pick(inp.appd_date, chkd_date),
+    }
+    for i, col in enumerate(DOC_NO_CELLS):
+        cells[f"{col}80"] = doc[i] if i < len(doc) else ""
+    return {k: "" if v is None else str(v) for k, v in cells.items()}
 
 
 def extn_label(ext: int) -> str:
