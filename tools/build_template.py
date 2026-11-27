@@ -50,6 +50,11 @@ LABEL_CELLS = (
 ).split() + [f"{c}{r}" for r in range(74, 83) for c in "EFGHIJ"] \
   + [f"{c}80" for c in "N O P Q R S T U V W X Y Z AA AB AC AD AE AF AG".split()]   # doc no., 1 char per cell
 
+# Rotated dimension values stacked along one vertical dimension line, top to bottom.
+# Excel top-aligns them in their cells; on the drawing each value belongs centred
+# between two dimension ticks, so the ticks are found in the drawing itself.
+VERTICAL_DIM_STACKS = [["W31", "W32"]]   # plate dims 70 / 50
+
 # Shapes that get a text field: field name -> preset geometry of the shape in the drawing
 SHAPE_FIELDS = {"BALLOON": "flowChartConnector"}   # empty circle next to the angle size (item no. 51)
 DPI = 200
@@ -133,6 +138,29 @@ def merged_cells(ws, cell):
             return [ws.cell(r, c).coordinate for r in range(m.min_row, m.max_row + 1)
                     for c in range(m.min_col, m.max_col + 1)]
     return [cell]
+
+
+def vertical_dim_spans(bg: np.ndarray, boxes: dict, cells: list) -> dict:
+    """Find the ticks of the vertical dimension line just left of the stacked cells and
+    return {cell: [y_top, y_bottom]} = the gap between consecutive ticks."""
+    if not all(c in boxes for c in cells):
+        return {}
+    dark = bg.mean(axis=2) < 140
+    x0 = boxes[cells[0]][0]
+    y_top, y_bot = boxes[cells[0]][1], boxes[cells[-1]][3]
+    line_x = max(range(x0 - 30, x0), key=lambda x: dark[y_top:y_bot, x].sum())
+    rows = [y for y in range(y_top - 15, y_bot + 15) if dark[y, line_x - 20:line_x - 2].mean() > 0.9]
+    ticks = []
+    for y in rows:                       # merge neighbouring rows of one thick line
+        if ticks and y - ticks[-1][-1] <= 2:
+            ticks[-1].append(y)
+        else:
+            ticks.append([y])
+    ticks = [sum(t) / len(t) for t in ticks]
+    if len(ticks) != len(cells) + 1:
+        print(f"WARNING: expected {len(cells) + 1} dimension ticks for {cells}, found {len(ticks)}; keeping Excel position")
+        return {}
+    return {c: [round(ticks[i]), round(ticks[i + 1])] for i, c in enumerate(cells)}
 
 
 def to_png(xlsx: Path, soffice: str, out_dir: Path, page_no: int, n_sheets: int) -> np.ndarray:
@@ -236,6 +264,10 @@ def main():
                      "size": round((cell.font.sz or 11) * px_per_pt, 1),
                      "bold": bool(cell.font.b), "font": cell.font.name,
                      "wrap": bool(cell.alignment.wrapText)}
+
+    for stack in VERTICAL_DIM_STACKS:
+        for c, span in vertical_dim_spans(bg, boxes, stack).items():
+            fields[c]["span"] = span      # page centres the value between these two ticks
 
     img = Image.fromarray(bg.astype("uint8")).quantize(colors=48, method=Image.Quantize.MEDIANCUT,
                                                        dither=Image.Dither.NONE)

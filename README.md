@@ -21,6 +21,11 @@ app/
   tools/build_excel_template.py  re-embed the workbook for Export Excel
 ```
 
+## Hosted
+
+https://praveen1210.github.io/Designing_Framework/ (GitHub Pages, branch `pkr-sample`, folder `/ (root)`;
+the root `index.html` opens `app/web/`). Every push to `pkr-sample` updates the site in about a minute.
+
 ## Daily use
 
 1. Open `web/index.html`. Pick **SST-BODY** or **SST-LEG** at the top.

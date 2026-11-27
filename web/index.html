@@ -364,7 +364,10 @@
     for (const [cell, f] of Object.entries(tpl().fields)) {
       if (!CELL_MAP[cell]) continue;
       const isInput = !!CELL_MAP[cell][2];
-      const [x0, y0, x1, y1] = f.box, w = x1 - x0, h = y1 - y0, cx = x0 + w / 2, cy = y0 + h / 2;
+      // "span": value belongs centred between two dimension ticks, not where Excel's cell puts it
+      const [x0, bY0, x1, bY1] = f.box;
+      const [y0, y1] = f.span || [bY0, bY1];
+      const w = x1 - x0, h = y1 - y0, cx = x0 + w / 2, cy = y0 + h / 2;
       const text = cellValue(cell, res);
       // Background already has these cells blanked: nothing is painted over drawing lines,
       // only a see-through marker on input cells when asked.
@@ -376,7 +379,7 @@
         layer.appendChild(rect);
       }
       const isNumber = /^-?[\d.]+$/.test(text);
-      const align = f.align === "general" ? (isNumber ? "right" : "left") : f.align;
+      const align = f.span ? "center" : f.align === "general" ? (isNumber ? "right" : "left") : f.align;
       const t = document.createElementNS(SVGNS, "text");
       const family = fontFamily(f);
       const pad = 3;
